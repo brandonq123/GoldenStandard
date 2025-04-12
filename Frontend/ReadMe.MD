@@ -1,0 +1,10 @@
+{
+  "liveshare.excludeFiles": [
+    "**/.env",
+    "**/.gitignore",
+    "**/env/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/*.log"
+  ]
+}
