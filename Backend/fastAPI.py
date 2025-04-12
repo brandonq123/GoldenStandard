@@ -29,3 +29,9 @@ app.add_middleware(
 )
 
 # Initial Routes
+
+
+# Routes for handling polygon data to render
+
+
+# Routes for handling sentiment analysis
