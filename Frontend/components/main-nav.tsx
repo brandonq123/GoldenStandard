@@ -10,7 +10,7 @@ export function MainNav() {
 
   return (
     <div className="mr-4 flex items-center">
-      <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
+      <Link href="/" className="mr-6 flex items-center space-x-2">
         <BarChart3 className="h-6 w-6 text-primary" />
         <span className="hidden font-bold sm:inline-block">StockSentiment</span>
       </Link>
