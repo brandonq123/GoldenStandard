@@ -8,7 +8,7 @@ export default function DashboardPage() {
   return (
     <>
       <DashboardShell>
-        <DashboardHeader heading="Market Pulse" text="Track sentiment across social platforms and forums." />
+        <DashboardHeader heading="Market Pulse" text=" sentiment across social platforms and forums." />
         <div className="grid gap-6 lg:grid-cols-7">
           {/* Left column - Stocks */}
           <div className="flex flex-col gap-6 lg:col-span-3">
