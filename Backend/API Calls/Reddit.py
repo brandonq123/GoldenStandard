@@ -2,12 +2,7 @@ import praw
 from dotenv import load_dotenv
 import os
 
-# Get the absolute path to the .env file
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, "../.."))
-env_path = os.path.join(project_root, "env", ".env")
-
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path="env/.env")
 
 reddit = praw.Reddit(
     client_id=os.getenv("REDDIT_CLIENT_ID"),
