@@ -6,6 +6,8 @@ import { DashboardShell } from "@/components/dashboard-shell"
 import { StockChart } from "@/components/stock-chart"
 import { StockSelector } from "@/components/stock-selector"
 import { StockInfo } from "@/components/stock-info"
+import { AISummaries } from "@/components/ai-summaries"
+import { SourcesList } from "@/components/sources-list"
 import { mockStockData } from "@/lib/mock-stock-data"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -91,6 +93,16 @@ export default function StockPage() {
         {/* Stock Information */}
         <div className="w-full">
           <StockInfo data={stockInfo} />
+        </div>
+
+        {/* AI Summaries Section */}
+        <div className="w-full mt-8">
+          <AISummaries />
+        </div>
+
+        {/* Sources Section */}
+        <div className="w-full mt-8">
+          <SourcesList />
         </div>
       </div>
     </DashboardShell>
