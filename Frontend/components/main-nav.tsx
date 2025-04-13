@@ -3,7 +3,8 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { BarChart3, Home, TrendingUp } from "lucide-react"
+import { Home, TrendingUp } from "lucide-react"
+import { GoldenLogo } from "./golden-logo"
 
 export function MainNav() {
   const pathname = usePathname()
@@ -11,8 +12,8 @@ export function MainNav() {
   return (
     <div className="mr-4 flex items-center">
       <Link href="/" className="mr-6 flex items-center space-x-2">
-        <BarChart3 className="h-6 w-6 text-primary" />
-        <span className="hidden font-bold sm:inline-block">StockSentiment</span>
+        <GoldenLogo />
+        <span className="hidden font-bold sm:inline-block">Golden Standard</span>
       </Link>
       <nav className="flex items-center gap-6 text-sm">
         <Link
