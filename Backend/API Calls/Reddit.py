@@ -10,7 +10,7 @@ reddit = praw.Reddit(
     user_agent=os.getenv("REDDIT_USER_AGENT")
 )
 
-def fetch_reddit_comments_for_ticker(reddit, ticker: str, count: int = 5):
+def fetch_reddit_comments_for_ticker(reddit, ticker: str, count: int = 5): 
     subreddit = reddit.subreddit("wallstreetbets")
     posts = subreddit.search(ticker, sort="new", limit=count)
     comments_data = []
