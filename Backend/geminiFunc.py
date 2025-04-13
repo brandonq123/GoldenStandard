@@ -1,5 +1,4 @@
 from google import generativeai as genai
-from serpapi import GoogleSearch
 from dotenv import load_dotenv
 import os
 
