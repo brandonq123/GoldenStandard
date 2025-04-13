@@ -11,4 +11,3 @@ def generate_text(prompt: str):
     return response.text
 
 print(generate_text("Who is the best nba player of all time?"))
-
