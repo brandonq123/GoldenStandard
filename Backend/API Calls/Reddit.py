@@ -7,12 +7,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, "../.."))
 env_path = os.path.join(project_root, "env", ".env")
 
-print("Looking for .env file at:", env_path)
 load_dotenv(dotenv_path=env_path)
-
-print("Client ID:", os.getenv("REDDIT_CLIENT_ID"))
-print("Secret:", os.getenv("REDDIT_CLIENT_SECRET"))
-print("User Agent:", os.getenv("REDDIT_USER_AGENT"))
 
 reddit = praw.Reddit(
     client_id=os.getenv("REDDIT_CLIENT_ID"),
