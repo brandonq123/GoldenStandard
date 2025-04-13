@@ -1,4 +1,4 @@
-// File: /Users/bquain2650/Documents/GitHub/SentimentTech/Frontend/app/layout.tsx
+// File: /Users/claude/GitHub/SentimentTech/Frontend/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
