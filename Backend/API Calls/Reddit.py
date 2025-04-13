@@ -16,21 +16,32 @@ def fetch_reddit_comments_for_ticker(reddit, ticker: str, count: int = 5):
     comments_data = []
 
     for post in posts:
-        post.comments.replace_more(limit=0)  # Expand top-level comments
-        if post.comments:
-            top_comment = post.comments[0]
-            comments_data.append({
-                "id": f"reddit-{post.id}-{top_comment.id}",
-                "author": top_comment.author.name if top_comment.author else "Anonymous",
-                "content": top_comment.body,
-                "upvotes": top_comment.score,
-                "replies": len(top_comment.replies),
-                "time": f"{int((post.created_utc - top_comment.created_utc) // 3600)}h ago",
-                "sentiment": "neutral",  # You can use TextBlob or similar to infer
-                "isInfluential": top_comment.score > 100,
-                "source": "reddit"
-            })
+        post.comments.replace_more(limit=0)
 
-    print(comments_data)
+        for comment in post.comments:
+            if (
+                comment.author
+                and comment.author.name.lower() != "visualmod"
+                and len(comment.body.strip()) > 20
+                and ticker.upper() in comment.body.upper()
+            ):
+                comments_data.append({
+                    "id": f"reddit-{post.id}-{comment.id}",
+                    "author": comment.author.name,
+                    "content": comment.body.strip(),
+                    "upvotes": comment.score,
+                    "replies": len(comment.replies),
+                    "time": f"{int((post.created_utc - comment.created_utc) // 3600)}h ago",
+                    "sentiment": "neutral",
+                    "isInfluential": comment.score > 100,
+                    "source": "reddit",
+                    "context_url": f"https://reddit.com{post.permalink}"
+                })
+                break  # FIRST valid comment only
 
-fetch_reddit_comments_for_ticker(reddit, "NVDA")
+    return comments_data
+
+# Run test
+if __name__ == "__main__":
+    comments = fetch_reddit_comments_for_ticker(reddit, "NVDA", count=5)
+    print(comments)
