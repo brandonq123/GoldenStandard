@@ -21,32 +21,27 @@ interface StockInfoProps {
 
 export function StockInfo({ data }: StockInfoProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <InfoCard
-        label="Current Price"
-        value={`$${data.price.toFixed(2)}`}
-        detail={
-          <span className={data.change >= 0 ? "text-green-600" : "text-red-600"}>
-            {data.change >= 0 ? "+" : ""}{data.change.toFixed(2)} ({data.changePercent.toFixed(2)}%)
-          </span>
-        }
-      />
-      <InfoCard
-        label="Day Range"
-        value={`$${data.low.toFixed(2)} - $${data.high.toFixed(2)}`}
-      />
-      <InfoCard
-        label="Volume"
-        value={data.volume}
-      />
-      <InfoCard
-        label="Market Cap"
-        value={data.marketCap}
-      />
-      <InfoCard
-        label="P/E Ratio"
-        value={data.peRatio.toFixed(2)}
-      />
+    <div className="flex flex-wrap gap-8 text-sm">
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">High</span>
+        <span className="font-medium">${data.high.toFixed(2)}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">Low</span>
+        <span className="font-medium">${data.low.toFixed(2)}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">Volume</span>
+        <span className="font-medium">{data.volume}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">Market Cap</span>
+        <span className="font-medium">{data.marketCap}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">P/E Ratio</span>
+        <span className="font-medium">{data.peRatio.toFixed(2)}</span>
+      </div>
     </div>
   )
 }
