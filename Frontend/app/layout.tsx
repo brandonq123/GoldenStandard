@@ -1,29 +1,38 @@
-import type React from "react"
-import "@/app/globals.css"
-import type { Metadata } from "next"
+import "@/styles/globals.css"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
-  title: "StockSentiment - Track Social Media Sentiment for Stocks",
-  description: "Track sentiment across social platforms and forums to make informed investment decisions",
-    generator: 'v0.dev'
+export const metadata = {
+  title: "Golden Standard",
+  description: "Track social sentiment across platforms and make informed investment decisions",
+  icons: {
+    icon: [
+      {
+        url: '/favicon.ico',
+        sizes: 'any',
+        type: 'image/x-icon',
+      },
+    ],
+  },
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+interface RootLayoutProps {
+  children: React.ReactNode
+}
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en" className="dark">
-      <body className={cn(inter.className, "min-h-screen bg-background antialiased")}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
-          {children}
+    <html lang="en">
+      <head />
+      <body className={`min-h-screen bg-background font-sans antialiased ${inter.className}`}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <div className="relative flex min-h-screen flex-col">
+            <div className="flex-1">{children}</div>
+          </div>
         </ThemeProvider>
       </body>
     </html>
   )
 }
-
-
-import './globals.css'

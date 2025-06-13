@@ -15,4 +15,3 @@ snscrape
 playwright
 google-search-results
 serpapi
-

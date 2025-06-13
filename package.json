@@ -1,4 +1,5 @@
 {
+  "name": "golden-standard",
   "dependencies": {
     "framer-motion": "^12.6.5"
   }

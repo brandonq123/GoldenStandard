@@ -29,7 +29,7 @@ export const mockStockData: StockData[] = [
   {
     symbol: "AAPL",
     name: "Apple Inc.",
-    price: 148.97,
+    price: 198.15,
     change: 0.87,
     sentiment: "bullish",
     mentions: 543,

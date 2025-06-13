@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { StockChart } from "@/components/stock-chart"
@@ -25,7 +25,36 @@ const TIME_PERIODS: TimePeriod[] = ['1D', '1W', '1M', '3M', '1Y', '5Y']
 
 export default function StockPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("1D")
-  const currentData = mockStockData[selectedPeriod]
+  const [isFirstLoad, setIsFirstLoad] = useState(true)
+  const [isChartLoading, setIsChartLoading] = useState(true)
+  const [currentData, setCurrentData] = useState(mockStockData["1D"])
+
+  // Initial page load - load everything
+  useEffect(() => {
+    if (isFirstLoad) {
+      const timer = setTimeout(() => {
+        setIsFirstLoad(false)
+        setIsChartLoading(false)
+      }, 2500 + Math.random() * 1000)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [isFirstLoad])
+  
+  // Only reload chart data when period changes
+  useEffect(() => {
+    if (!isFirstLoad) {
+      // Only show loading for chart when changing time period
+      setIsChartLoading(true)
+      
+      const chartDataTimer = setTimeout(() => {
+        setCurrentData(mockStockData[selectedPeriod])
+        setIsChartLoading(false)
+      }, 1200 + Math.random() * 800)
+      
+      return () => clearTimeout(chartDataTimer)
+    }
+  }, [selectedPeriod, isFirstLoad])
 
   const stockInfo = {
     symbol: "AAPL",
@@ -55,7 +84,17 @@ export default function StockPage() {
 
         {/* Main Chart */}
         <div className="w-full border rounded-lg p-6 bg-background">
-          <StockChart data={currentData} selectedPeriod={selectedPeriod} />
+          {isChartLoading ? (
+            <div className="flex flex-col space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="h-8 w-40 animate-pulse rounded-md bg-muted" />
+                <div className="h-8 w-32 animate-pulse rounded-md bg-muted" />
+              </div>
+              <div className="h-64 w-full animate-pulse rounded-md bg-muted" />
+            </div>
+          ) : (
+            <StockChart data={currentData} selectedPeriod={selectedPeriod} />
+          )}
           
           {/* Time Range Selector */}
           <div className="flex justify-start gap-6 mt-6">
@@ -69,6 +108,7 @@ export default function StockPage() {
                 )}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                disabled={isChartLoading}
               >
                 {period}
                 {selectedPeriod === period && (
@@ -92,17 +132,28 @@ export default function StockPage() {
 
         {/* Stock Information */}
         <div className="w-full">
-          <StockInfo data={stockInfo} />
+          {isChartLoading ? (
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="p-4 border rounded-lg">
+                  <div className="h-5 w-24 animate-pulse rounded-md bg-muted mb-2" />
+                  <div className="h-6 w-16 animate-pulse rounded-md bg-muted" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <StockInfo data={stockInfo} />
+          )}
         </div>
 
         {/* AI Summaries Section */}
         <div className="w-full mt-8">
-          <AISummaries />
+          <AISummaries isLoading={isFirstLoad} />
         </div>
 
         {/* Sources Section */}
         <div className="w-full mt-8">
-          <SourcesList />
+          <SourcesList isLoading={isFirstLoad} />
         </div>
       </div>
     </DashboardShell>
