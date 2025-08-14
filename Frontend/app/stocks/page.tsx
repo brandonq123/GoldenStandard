@@ -8,16 +8,20 @@ import { StockSelector } from "@/components/stock-selector"
 import { StockInfo } from "@/components/stock-info"
 import { AISummaries } from "@/components/ai-summaries"
 import { SourcesList } from "@/components/sources-list"
-import { mockStockData } from "@/lib/mock-stock-data"
+import { apiService, StockData, PriceData } from "@/lib/api"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
-// Placeholder data
-const mockStocks = [
+// Popular stocks for selector
+const popularStocks = [
   { symbol: "AAPL", name: "Apple Inc." },
   { symbol: "GOOGL", name: "Alphabet Inc." },
   { symbol: "MSFT", name: "Microsoft Corporation" },
   { symbol: "AMZN", name: "Amazon.com, Inc." },
+  { symbol: "NVDA", name: "NVIDIA Corporation" },
+  { symbol: "TSLA", name: "Tesla, Inc." },
+  { symbol: "META", name: "Meta Platforms, Inc." },
+  { symbol: "NFLX", name: "Netflix, Inc." },
 ]
 
 type TimePeriod = "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y"
@@ -25,48 +29,87 @@ const TIME_PERIODS: TimePeriod[] = ['1D', '1W', '1M', '3M', '1Y', '5Y']
 
 export default function StockPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("1D")
-  const [isFirstLoad, setIsFirstLoad] = useState(true)
+  const [selectedStock, setSelectedStock] = useState("AAPL")
+  const [isLoading, setIsLoading] = useState(true)
   const [isChartLoading, setIsChartLoading] = useState(true)
-  const [currentData, setCurrentData] = useState(mockStockData["1D"])
-
-  // Initial page load - load everything
-  useEffect(() => {
-    if (isFirstLoad) {
-      const timer = setTimeout(() => {
-        setIsFirstLoad(false)
-        setIsChartLoading(false)
-      }, 2500 + Math.random() * 1000)
-      
-      return () => clearTimeout(timer)
-    }
-  }, [isFirstLoad])
+  const [error, setError] = useState<string | null>(null)
   
-  // Only reload chart data when period changes
-  useEffect(() => {
-    if (!isFirstLoad) {
-      // Only show loading for chart when changing time period
-      setIsChartLoading(true)
-      
-      const chartDataTimer = setTimeout(() => {
-        setCurrentData(mockStockData[selectedPeriod])
-        setIsChartLoading(false)
-      }, 1200 + Math.random() * 800)
-      
-      return () => clearTimeout(chartDataTimer)
-    }
-  }, [selectedPeriod, isFirstLoad])
+  // Data states
+  const [stockInfo, setStockInfo] = useState<StockData | null>(null)
+  const [currentData, setCurrentData] = useState<PriceData[]>([])
 
-  const stockInfo = {
-    symbol: "AAPL",
-    name: "Apple Inc.",
-    price: currentData[currentData.length - 1].close,
-    change: currentData[currentData.length - 1].close - currentData[0].open,
-    changePercent: ((currentData[currentData.length - 1].close - currentData[0].open) / currentData[0].open) * 100,
-    high: Math.max(...currentData.map(d => d.high)),
-    low: Math.min(...currentData.map(d => d.low)),
-    volume: "45.3M",
-    marketCap: "2.87T",
-    peRatio: 30.21,
+  // Initial load
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setIsLoading(true)
+      setError(null)
+      
+      try {
+        // Load stock info and price data in parallel
+        const [infoData, priceData] = await Promise.all([
+          apiService.getStockInfo(selectedStock),
+          apiService.getStockPrice(selectedStock, selectedPeriod)
+        ])
+        
+        setStockInfo(infoData)
+        setCurrentData(priceData.data)
+        setIsLoading(false)
+        setIsChartLoading(false)
+      } catch (err) {
+        console.error('Failed to load initial data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load stock data')
+        setIsLoading(false)
+        setIsChartLoading(false)
+      }
+    }
+
+    loadInitialData()
+  }, [selectedStock])
+
+  // Handle period changes
+  useEffect(() => {
+    if (!isLoading) {
+      const loadPriceData = async () => {
+        setIsChartLoading(true)
+        setError(null)
+        
+        try {
+          const priceData = await apiService.getStockPrice(selectedStock, selectedPeriod)
+          setCurrentData(priceData.data)
+          setIsChartLoading(false)
+        } catch (err) {
+          console.error('Failed to load price data:', err)
+          setError(err instanceof Error ? err.message : 'Failed to load price data')
+          setIsChartLoading(false)
+        }
+      }
+
+      loadPriceData()
+    }
+  }, [selectedPeriod, selectedStock, isLoading])
+
+  // Handle stock selection
+  const handleStockChange = (symbol: string) => {
+    setSelectedStock(symbol)
+  }
+
+  if (error) {
+    return (
+      <DashboardShell>
+        <div className="flex flex-col items-center justify-center h-64">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Error Loading Data</h2>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardShell>
+    )
   }
 
   return (
@@ -79,7 +122,11 @@ export default function StockPage() {
         
         {/* Stock Selector */}
         <div className="w-full max-w-xs">
-          <StockSelector stocks={mockStocks} defaultStock={stockInfo} />
+          <StockSelector 
+            stocks={popularStocks} 
+            defaultStock={stockInfo || { symbol: "AAPL", name: "Apple Inc." }}
+            onStockChange={handleStockChange}
+          />
         </div>
 
         {/* Main Chart */}
@@ -132,7 +179,7 @@ export default function StockPage() {
 
         {/* Stock Information */}
         <div className="w-full">
-          {isChartLoading ? (
+          {isLoading ? (
             <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="p-4 border rounded-lg">
@@ -141,19 +188,19 @@ export default function StockPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : stockInfo ? (
             <StockInfo data={stockInfo} />
-          )}
+          ) : null}
         </div>
 
         {/* AI Summaries Section */}
         <div className="w-full mt-8">
-          <AISummaries isLoading={isFirstLoad} />
+          <AISummaries isLoading={isLoading} />
         </div>
 
         {/* Sources Section */}
         <div className="w-full mt-8">
-          <SourcesList isLoading={isFirstLoad} />
+          <SourcesList isLoading={isLoading} />
         </div>
       </div>
     </DashboardShell>

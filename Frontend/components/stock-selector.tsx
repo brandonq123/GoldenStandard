@@ -17,16 +17,22 @@ interface Stock {
 interface StockSelectorProps {
   stocks: Stock[]
   defaultStock: Stock
+  onStockChange?: (symbol: string) => void
   onSelect?: (stock: Stock) => void
 }
 
-export function StockSelector({ stocks, defaultStock, onSelect }: StockSelectorProps) {
+export function StockSelector({ stocks, defaultStock, onStockChange, onSelect }: StockSelectorProps) {
+  const handleStockChange = (value: string) => {
+    const selected = stocks.find(s => s.symbol === value)
+    if (selected) {
+      if (onSelect) onSelect(selected)
+      if (onStockChange) onStockChange(value)
+    }
+  }
+
   return (
     <div className="flex items-center gap-2">
-      <Select defaultValue={defaultStock.symbol} onValueChange={(value) => {
-        const selected = stocks.find(s => s.symbol === value)
-        if (selected && onSelect) onSelect(selected)
-      }}>
+      <Select defaultValue={defaultStock.symbol} onValueChange={handleStockChange}>
         <SelectTrigger className="w-[200px]">
           <SelectValue placeholder="Select a stock" />
         </SelectTrigger>

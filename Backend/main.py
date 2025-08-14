@@ -12,6 +12,15 @@ from dotenv import load_dotenv
 from bson import ObjectId
 from db import get_collection
 
+# Import Polygon API functions
+from API_Calls.Polygon import (
+    get_stock_price as polygon_get_stock_price,
+    get_historical_data,
+    get_company_info,
+    get_market_news,
+    PolygonException
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -122,36 +131,48 @@ async def get_stock_info(symbol: str):
     Get current stock information for a given symbol
     """
     logger.info(f"Fetching stock info for {symbol}")
-    # This would normally fetch from Polygon API
     
-    # Mock response
-    mock_data = {
-        "AAPL": {
-            "symbol": "AAPL",
-            "name": "Apple Inc.",
-            "price": 198.14,
-            "change": 2.34,
-            "change_percent": 1.18,
-            "volume": "45.3M",
-            "market_cap": "2.87T",
-            "pe_ratio": 30.21
-        },
-        "MSFT": {
-            "symbol": "MSFT",
-            "name": "Microsoft Corporation",
-            "price": 417.23,
-            "change": -1.85,
-            "change_percent": -0.44,
-            "volume": "22.1M",
-            "market_cap": "3.1T", 
-            "pe_ratio": 35.12
+    try:
+        # Get current stock price from Polygon
+        price_data = polygon_get_stock_price(symbol.upper())
+        
+        # Get company info from Polygon
+        company_data = get_company_info(symbol.upper())
+        
+        if not price_data.get('results') or not company_data.get('results'):
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+        
+        # Extract price data
+        price_result = price_data['results'][0]
+        company_result = company_data['results']
+        
+        # Calculate price change
+        current_price = price_result['c']  # Close price
+        previous_close = price_result.get('p', current_price)  # Previous close
+        price_change = current_price - previous_close
+        price_change_percent = (price_change / previous_close) * 100 if previous_close else 0
+        
+        # Format volume
+        volume = price_result.get('v', 0)
+        volume_str = f"{volume/1000000:.1f}M" if volume >= 1000000 else f"{volume/1000:.1f}K"
+        
+        return {
+            "symbol": symbol.upper(),
+            "name": company_result.get('name', f"{symbol.upper()} Corporation"),
+            "price": round(current_price, 2),
+            "change": round(price_change, 2),
+            "change_percent": round(price_change_percent, 2),
+            "volume": volume_str,
+            "market_cap": company_result.get('market_cap', "N/A"),
+            "pe_ratio": company_result.get('pe_ratio', 0.0)
         }
-    }
-    
-    if symbol.upper() not in mock_data:
-        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    
-    return mock_data.get(symbol.upper())
+        
+    except PolygonException as e:
+        logger.error(f"Polygon API error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stock data: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error fetching stock info: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/stocks/{symbol}/price", response_model=StockPriceResponse, tags=["Stocks"])
 async def get_stock_price(
@@ -163,54 +184,71 @@ async def get_stock_price(
     """
     logger.info(f"Fetching {interval} price data for {symbol}")
     
-    # This would normally fetch from Polygon API
-    # For now return mock data
-    time_periods = ['1D', '1W', '1M', '3M', '1Y', '5Y']
+    # Map frontend intervals to Polygon timespans
+    interval_mapping = {
+        "1D": ("hour", 1),
+        "1W": ("day", 7),
+        "1M": ("day", 30),
+        "3M": ("day", 90),
+        "1Y": ("day", 365),
+        "5Y": ("day", 1825)
+    }
     
-    if interval not in time_periods:
-        raise HTTPException(status_code=400, detail=f"Invalid interval. Must be one of {time_periods}")
-
-    # Mock response with a small number of data points
-    data = []
-    base_price = 198.14  # Apple's current price
+    if interval not in interval_mapping:
+        raise HTTPException(status_code=400, detail=f"Invalid interval. Must be one of {list(interval_mapping.keys())}")
     
-    if interval == "1D":
-        # Generate hourly data for a day
-        for i in range(8):
-            hour = 9 + i
-            time_str = f"{hour}:30"
-            change = (i - 4) * 0.25  # Some variation around base price
+    try:
+        timespan, days_back = interval_mapping[interval]
+        
+        # Calculate date range
+        to_date = datetime.now()
+        from_date = to_date - timedelta(days=days_back)
+        
+        # Get historical data from Polygon
+        historical_data = get_historical_data(
+            symbol=symbol.upper(),
+            timespan=timespan,
+            from_date=from_date.strftime("%Y-%m-%d"),
+            to_date=to_date.strftime("%Y-%m-%d"),
+            limit=1000
+        )
+        
+        if not historical_data.get('results'):
+            raise HTTPException(status_code=404, detail=f"No historical data found for {symbol}")
+        
+        # Transform data to match frontend expectations
+        data = []
+        for result in historical_data['results']:
+            # Format time based on interval
+            timestamp = datetime.fromtimestamp(result['t'] / 1000)
+            if interval == "1D":
+                time_str = timestamp.strftime("%H:%M")
+            elif interval in ["1W", "1M", "3M"]:
+                time_str = timestamp.strftime("%m/%d")
+            else:  # 1Y, 5Y
+                time_str = timestamp.strftime("%m/%y")
+            
             data.append({
                 "time": time_str,
-                "open": round(base_price + change - 0.1, 2),
-                "high": round(base_price + change + 0.2, 2),
-                "low": round(base_price + change - 0.3, 2),
-                "close": round(base_price + change, 2),
-                "volume": int(1000000 + i * 200000)
+                "open": round(result['o'], 2),
+                "high": round(result['h'], 2),
+                "low": round(result['l'], 2),
+                "close": round(result['c'], 2),
+                "volume": result.get('v', 0)
             })
-    else:
-        # Generate mock data for other intervals
-        points = {"1W": 5, "1M": 22, "3M": 66, "1Y": 52, "5Y": 60}
-        for i in range(points[interval]):
-            # Create realistic-looking price movements
-            change = (i - points[interval]/2) * 0.5
-            if interval in ["1Y", "5Y"]:
-                change = change * 2  # Bigger changes for longer timeframes
-                
-            data.append({
-                "time": f"2023-{((i % 12) + 1):02d}-{((i % 28) + 1):02d}",
-                "open": round(base_price + change - 0.5, 2),
-                "high": round(base_price + change + 1.0, 2),
-                "low": round(base_price + change - 1.2, 2),
-                "close": round(base_price + change, 2),
-                "volume": int(10000000 + i * 1000000)
-            })
-    
-    return {
-        "symbol": symbol.upper(),
-        "interval": interval,
-        "data": data
-    }
+        
+        return {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "data": data
+        }
+        
+    except PolygonException as e:
+        logger.error(f"Polygon API error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch price data: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error fetching price data: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # Routes for handling sentiment analysis
 @app.get("/stocks/{symbol}/sentiment", response_model=SentimentResponse, tags=["Sentiment"])
