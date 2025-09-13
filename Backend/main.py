@@ -2,6 +2,8 @@
 import logging
 import os
 import json
+import time
+import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 from fastapi import FastAPI, HTTPException, Query, Depends, status
@@ -10,10 +12,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from bson import ObjectId
-from db import get_collection
+# from db import get_collection  # Commented out for now - focusing on Polygon API
 
 # Import Polygon API functions
-from API_Calls.Polygon import (
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'API Calls'))
+from Polygon import (
     get_stock_price as polygon_get_stock_price,
     get_historical_data,
     get_company_info,
@@ -23,6 +28,9 @@ from API_Calls.Polygon import (
 
 # Load environment variables
 load_dotenv()
+
+# Get Polygon API key
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 
 '''
 TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")
@@ -134,39 +142,76 @@ async def get_stock_info(symbol: str):
     
     try:
         # Get current stock price from Polygon
-        price_data = polygon_get_stock_price(symbol.upper())
+        price_data = None
+        company_data = None
         
-        # Get company info from Polygon
-        company_data = get_company_info(symbol.upper())
+        try:
+            price_data = polygon_get_stock_price(symbol.upper())
+        except PolygonException as e:
+            logger.warning(f"Failed to get price data for {symbol}: {e}")
+            # Continue with company data only
         
-        if not price_data.get('results') or not company_data.get('results'):
-            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+        try:
+            company_data = get_company_info(symbol.upper())
+        except PolygonException as e:
+            logger.warning(f"Failed to get company data for {symbol}: {e}")
+            # Continue with price data only
         
-        # Extract price data
-        price_result = price_data['results'][0]
-        company_result = company_data['results']
+        # If both failed, return error
+        if not price_data and not company_data:
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found or API unavailable")
         
-        # Calculate price change
-        current_price = price_result['c']  # Close price
-        previous_close = price_result.get('p', current_price)  # Previous close
-        price_change = current_price - previous_close
-        price_change_percent = (price_change / previous_close) * 100 if previous_close else 0
+        # Extract and process data with fallbacks
+        current_price = 0.0
+        price_change = 0.0
+        price_change_percent = 0.0
+        volume_str = "N/A"
         
-        # Format volume
-        volume = price_result.get('v', 0)
-        volume_str = f"{volume/1000000:.1f}M" if volume >= 1000000 else f"{volume/1000:.1f}K"
+        if price_data and price_data.get('results'):
+            price_result = price_data['results'][0]
+            current_price = price_result['c']  # Close price
+            previous_close = price_result.get('p', current_price)  # Previous close
+            price_change = current_price - previous_close
+            price_change_percent = (price_change / previous_close) * 100 if previous_close else 0
+            
+            # Format volume
+            volume = price_result.get('v', 0)
+            volume_str = f"{volume/1000000:.1f}M" if volume >= 1000000 else f"{volume/1000:.1f}K"
+        
+        # Format market cap as string
+        market_cap = "N/A"
+        company_name = f"{symbol.upper()} Corporation"
+        pe_ratio = 0.0
+        
+        if company_data and company_data.get('results'):
+            company_result = company_data['results']
+            company_name = company_result.get('name', company_name)
+            market_cap = company_result.get('market_cap', "N/A")
+            if isinstance(market_cap, (int, float)):
+                if market_cap >= 1e12:
+                    market_cap = f"${market_cap/1e12:.1f}T"
+                elif market_cap >= 1e9:
+                    market_cap = f"${market_cap/1e9:.1f}B"
+                elif market_cap >= 1e6:
+                    market_cap = f"${market_cap/1e6:.1f}M"
+                else:
+                    market_cap = f"${market_cap:,.0f}"
+            pe_ratio = company_result.get('pe_ratio', 0.0)
         
         return {
             "symbol": symbol.upper(),
-            "name": company_result.get('name', f"{symbol.upper()} Corporation"),
+            "name": company_name,
             "price": round(current_price, 2),
             "change": round(price_change, 2),
             "change_percent": round(price_change_percent, 2),
             "volume": volume_str,
-            "market_cap": company_result.get('market_cap', "N/A"),
-            "pe_ratio": company_result.get('pe_ratio', 0.0)
+            "market_cap": market_cap,
+            "pe_ratio": pe_ratio
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except PolygonException as e:
         logger.error(f"Polygon API error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch stock data: {str(e)}")
@@ -184,43 +229,74 @@ async def get_stock_price(
     """
     logger.info(f"Fetching {interval} price data for {symbol}")
     
-    # Map frontend intervals to Polygon timespans
-    interval_mapping = {
-        "1D": ("hour", 1),
-        "1W": ("day", 7),
-        "1M": ("day", 30),
-        "3M": ("day", 90),
-        "1Y": ("day", 365),
-        "5Y": ("day", 1825)
-    }
-    
-    if interval not in interval_mapping:
-        raise HTTPException(status_code=400, detail=f"Invalid interval. Must be one of {list(interval_mapping.keys())}")
-    
     try:
-        timespan, days_back = interval_mapping[interval]
+        # Use a more reliable date range - end with yesterday to avoid market hours issues
+        now = datetime.utcnow()
+        end_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")  # Use yesterday as end date
         
-        # Calculate date range
-        to_date = datetime.now()
-        from_date = to_date - timedelta(days=days_back)
+        # Map intervals to Polygon parameters with more conservative date ranges
+        if interval == "1D":
+            start = (now - timedelta(days=2)).strftime("%Y-%m-%d")  # Get 2 days to ensure we have data
+            multiplier, timespan = 5, "minute"
+        elif interval == "1W":
+            start = (now - timedelta(weeks=1)).strftime("%Y-%m-%d")
+            multiplier, timespan = 30, "minute"
+        elif interval == "1M":
+            start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+        elif interval == "3M":
+            start = (now - timedelta(days=90)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+        elif interval == "1Y":
+            start = (now - timedelta(days=365)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+        elif interval == "5Y":
+            start = (now - timedelta(days=5*365)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "week"
+        else:
+            start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+
+        # Build Polygon API URL with more reliable date range
+        url = f"https://api.polygon.io/v2/aggs/ticker/{symbol.upper()}/range/{multiplier}/{timespan}/{start}/{end_date}"
+        params = {
+            "adjusted": "true",
+            "sort": "asc",
+            "apiKey": POLYGON_API_KEY
+        }
         
-        # Get historical data from Polygon
-        historical_data = get_historical_data(
-            symbol=symbol.upper(),
-            timespan=timespan,
-            from_date=from_date.strftime("%Y-%m-%d"),
-            to_date=to_date.strftime("%Y-%m-%d"),
-            limit=1000
-        )
+        logger.info(f"Calling Polygon API: {url}")
         
-        if not historical_data.get('results'):
-            raise HTTPException(status_code=404, detail=f"No historical data found for {symbol}")
+        # Add longer delay to avoid rate limiting
+        time.sleep(0.2)
+        
+        response = requests.get(url, params=params)
+        
+        if response.status_code != 200:
+            logger.error(f"Polygon API error: {response.status_code} - {response.text}")
+            # Return empty data instead of throwing error to prevent frontend crashes
+            return {
+                "symbol": symbol.upper(),
+                "interval": interval,
+                "data": []
+            }
+        
+        data = response.json()
+        
+        if not data.get("results"):
+            logger.warning(f"No historical data found for {symbol}")
+            return {
+                "symbol": symbol.upper(),
+                "interval": interval,
+                "data": []
+            }
         
         # Transform data to match frontend expectations
-        data = []
-        for result in historical_data['results']:
+        candles = []
+        for item in data.get("results", []):
+            timestamp = datetime.utcfromtimestamp(item["t"] / 1000)
+            
             # Format time based on interval
-            timestamp = datetime.fromtimestamp(result['t'] / 1000)
             if interval == "1D":
                 time_str = timestamp.strftime("%H:%M")
             elif interval in ["1W", "1M", "3M"]:
@@ -228,24 +304,26 @@ async def get_stock_price(
             else:  # 1Y, 5Y
                 time_str = timestamp.strftime("%m/%y")
             
-            data.append({
+            candles.append({
                 "time": time_str,
-                "open": round(result['o'], 2),
-                "high": round(result['h'], 2),
-                "low": round(result['l'], 2),
-                "close": round(result['c'], 2),
-                "volume": result.get('v', 0)
+                "open": round(item["o"], 2),
+                "high": round(item["h"], 2),
+                "low": round(item["l"], 2),
+                "close": round(item["c"], 2),
+                "volume": item.get("v", 0)
             })
+        
+        logger.info(f"Returning {len(candles)} candles for {symbol}")
         
         return {
             "symbol": symbol.upper(),
             "interval": interval,
-            "data": data
+            "data": candles
         }
         
-    except PolygonException as e:
-        logger.error(f"Polygon API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch price data: {str(e)}")
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error fetching price data: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
@@ -388,30 +466,30 @@ async def get_trending_topics():
         "last_updated": datetime.now().isoformat()
     }
 
-# MongoDB test routes
-@app.get("/test-insert", tags=["MongoDB"])
-async def test_insert():
-    """Insert a test tweet into MongoDB."""
-    collection = get_collection()
-    test_tweet = {
-        "content": "Test tweet from FastAPI",
-        "created_at": datetime.now(),
-        "author": "test_user",
-        "likes": 0
-    }
-    result = collection.insert_one(test_tweet)
-    return {"message": "Test tweet inserted", "id": str(result.inserted_id)}
+# MongoDB test routes - commented out for now
+# @app.get("/test-insert", tags=["MongoDB"])
+# async def test_insert():
+#     """Insert a test tweet into MongoDB."""
+#     collection = get_collection()
+#     test_tweet = {
+#         "content": "Test tweet from FastAPI",
+#         "created_at": datetime.now(),
+#         "author": "test_user",
+#         "likes": 0
+#     }
+#     result = collection.insert_one(test_tweet)
+#     return {"message": "Test tweet inserted", "id": str(result.inserted_id)}
 
-@app.get("/get-latest", tags=["MongoDB"])
-async def get_latest_tweet():
-    """Get the most recent tweet from MongoDB."""
-    collection = get_collection()
-    tweet = collection.find_one(sort=[("created_at", -1)])
-    if tweet:
-        tweet["_id"] = str(tweet["_id"])  # Convert ObjectId to string
-        return tweet
-    return {"message": "No tweets found"}
+# @app.get("/get-latest", tags=["MongoDB"])
+# async def get_latest_tweet():
+#     """Get the most recent tweet from MongoDB."""
+#     collection = get_collection()
+#     tweet = collection.find_one(sort=[("created_at", -1)])
+#     if tweet:
+#         tweet["_id"] = str(tweet["_id"])  # Convert ObjectId to string
+#         return tweet
+#     return {"message": "No tweets found"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)

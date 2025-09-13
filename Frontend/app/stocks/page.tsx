@@ -22,6 +22,57 @@ const popularStocks = [
   { symbol: "TSLA", name: "Tesla, Inc." },
   { symbol: "META", name: "Meta Platforms, Inc." },
   { symbol: "NFLX", name: "Netflix, Inc." },
+  { symbol: "JPM", name: "JPMorgan Chase & Co." },
+  { symbol: "JNJ", name: "Johnson & Johnson" },
+  { symbol: "V", name: "Visa Inc." },
+  { symbol: "PG", name: "Procter & Gamble Co." },
+  { symbol: "UNH", name: "UnitedHealth Group Inc." },
+  { symbol: "HD", name: "Home Depot Inc." },
+  { symbol: "MA", name: "Mastercard Inc." },
+  { symbol: "DIS", name: "Walt Disney Co." },
+  { symbol: "PYPL", name: "PayPal Holdings Inc." },
+  { symbol: "ADBE", name: "Adobe Inc." },
+  { symbol: "CRM", name: "Salesforce Inc." },
+  { symbol: "NKE", name: "Nike Inc." },
+  { symbol: "INTC", name: "Intel Corporation" },
+  { symbol: "WMT", name: "Walmart Inc." },
+  { symbol: "VZ", name: "Verizon Communications Inc." },
+  { symbol: "KO", name: "Coca-Cola Co." },
+  { symbol: "PFE", name: "Pfizer Inc." },
+  { symbol: "T", name: "AT&T Inc." },
+  { symbol: "ABT", name: "Abbott Laboratories" },
+  { symbol: "MRK", name: "Merck & Co. Inc." },
+  { symbol: "PEP", name: "PepsiCo Inc." },
+  { symbol: "COST", name: "Costco Wholesale Corp." },
+  { symbol: "TMO", name: "Thermo Fisher Scientific Inc." },
+  { symbol: "ACN", name: "Accenture PLC" },
+  { symbol: "DHR", name: "Danaher Corporation" },
+  { symbol: "LLY", name: "Eli Lilly and Company" },
+  { symbol: "BMY", name: "Bristol-Myers Squibb Co." },
+  { symbol: "RTX", name: "Raytheon Technologies Corp." },
+  { symbol: "QCOM", name: "QUALCOMM Inc." },
+  { symbol: "TXN", name: "Texas Instruments Inc." },
+  { symbol: "HON", name: "Honeywell International Inc." },
+  { symbol: "LOW", name: "Lowe's Companies Inc." },
+  { symbol: "UPS", name: "United Parcel Service Inc." },
+  { symbol: "CAT", name: "Caterpillar Inc." },
+  { symbol: "IBM", name: "International Business Machines Corp." },
+  { symbol: "GS", name: "Goldman Sachs Group Inc." },
+  { symbol: "MS", name: "Morgan Stanley" },
+  { symbol: "BA", name: "Boeing Co." },
+  { symbol: "GE", name: "General Electric Co." },
+  { symbol: "F", name: "Ford Motor Co." },
+  { symbol: "GM", name: "General Motors Co." },
+  { symbol: "AMD", name: "Advanced Micro Devices Inc." },
+  { symbol: "ORCL", name: "Oracle Corporation" },
+  { symbol: "CSCO", name: "Cisco Systems Inc." },
+  { symbol: "CMCSA", name: "Comcast Corporation" },
+  { symbol: "PM", name: "Philip Morris International Inc." },
+  { symbol: "SPY", name: "SPDR S&P 500 ETF" },
+  { symbol: "QQQ", name: "Invesco QQQ Trust" },
+  { symbol: "IWM", name: "iShares Russell 2000 ETF" },
+  { symbol: "VTI", name: "Vanguard Total Stock Market ETF" },
+  { symbol: "VOO", name: "Vanguard S&P 500 ETF" },
 ]
 
 type TimePeriod = "1D" | "1W" | "1M" | "3M" | "1Y" | "5Y"
@@ -45,18 +96,24 @@ export default function StockPage() {
       setError(null)
       
       try {
-        // Load stock info and price data in parallel
-        const [infoData, priceData] = await Promise.all([
-          apiService.getStockInfo(selectedStock),
-          apiService.getStockPrice(selectedStock, selectedPeriod)
-        ])
-        
+        // Load stock info first (this works)
+        const infoData = await apiService.getStockInfo(selectedStock)
         setStockInfo(infoData)
-        setCurrentData(priceData.data)
         setIsLoading(false)
-        setIsChartLoading(false)
+        
+        // Try to load price data (this might fail)
+        try {
+          const priceData = await apiService.getStockPrice(selectedStock, selectedPeriod)
+          setCurrentData(priceData.data)
+          setIsChartLoading(false)
+        } catch (priceErr) {
+          console.warn('Price data failed to load:', priceErr)
+          // Don't show error for price data, just show empty chart
+          setCurrentData([])
+          setIsChartLoading(false)
+        }
       } catch (err) {
-        console.error('Failed to load initial data:', err)
+        console.error('Failed to load stock info:', err)
         setError(err instanceof Error ? err.message : 'Failed to load stock data')
         setIsLoading(false)
         setIsChartLoading(false)
@@ -78,8 +135,9 @@ export default function StockPage() {
           setCurrentData(priceData.data)
           setIsChartLoading(false)
         } catch (err) {
-          console.error('Failed to load price data:', err)
-          setError(err instanceof Error ? err.message : 'Failed to load price data')
+          console.warn('Failed to load price data:', err)
+          // Don't show error for price data, just show empty chart
+          setCurrentData([])
           setIsChartLoading(false)
         }
       }

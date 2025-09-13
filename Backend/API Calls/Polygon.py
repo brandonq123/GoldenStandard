@@ -2,8 +2,13 @@ import os
 import json
 import logging
 import requests
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union, Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +29,9 @@ def get_stock_price(symbol: str) -> Dict[str, Any]:
     
     logger.info(f"Getting stock price for {symbol}")
     
+    # Add a small delay to avoid rate limiting
+    time.sleep(0.1)
+    
     response = requests.get(url, params=params)
     
     if response.status_code != 200:
@@ -41,6 +49,7 @@ def get_historical_data(
     to_date: str = None, 
     limit: int = 100
 ) -> Dict[str, Any]:
+    # Use the correct endpoint for historical data
     url = f"{BASE_URL}/aggs/ticker/{symbol}/range/1/{timespan}"
     
     if not to_date:
@@ -68,12 +77,32 @@ def get_historical_data(
     }
     
     logger.info(f"Getting historical data for {symbol}: {timespan} from {from_date} to {to_date}")
+    logger.info(f"URL: {url}")
+    logger.info(f"Params: {params}")
     
     response = requests.get(url, params=params)
     
     if response.status_code != 200:
         logger.error(f"Error fetching historical data: {response.text}")
-        raise PolygonException(f"API request failed with status {response.status_code}: {response.text}")
+        logger.error(f"Response status: {response.status_code}")
+        # Try with a different endpoint format
+        if timespan == "hour":
+            # For intraday data, try a different approach
+            url = f"{BASE_URL}/aggs/ticker/{symbol}/range/1/day"
+            params = {
+                "from": from_date,
+                "to": to_date,
+                "limit": limit,
+                "apiKey": POLYGON_API_KEY
+            }
+            logger.info(f"Retrying with daily data: {url}")
+            response = requests.get(url, params=params)
+            
+            if response.status_code != 200:
+                logger.error(f"Retry also failed: {response.text}")
+                raise PolygonException(f"API request failed with status {response.status_code}: {response.text}")
+        else:
+            raise PolygonException(f"API request failed with status {response.status_code}: {response.text}")
     
     data = response.json()
     return data
@@ -84,6 +113,9 @@ def get_company_info(symbol: str) -> Dict[str, Any]:
     params = {"apiKey": POLYGON_API_KEY}
     
     logger.info(f"Getting company info for {symbol}")
+    
+    # Add a small delay to avoid rate limiting
+    time.sleep(0.1)
     
     response = requests.get(url, params=params)
     

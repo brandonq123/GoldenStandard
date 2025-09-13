@@ -2,6 +2,7 @@
 import logging
 import os
 import json
+import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 from fastapi import FastAPI, HTTPException, Query, Depends, status
@@ -12,6 +13,11 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Get Polygon API key
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
+if not POLYGON_API_KEY:
+    raise ValueError("POLYGON_API_KEY environment variable is required")
 
 ## Setup logging
 logging.basicConfig(
@@ -150,58 +156,77 @@ async def get_stock_price(
     interval: str = Query("1D", description="Time interval (1D, 1W, 1M, 3M, 1Y, 5Y)")
 ):
     """
-    Get historical price data for a stock
+    Get historical price data for a stock from Polygon
     """
     logger.info(f"Fetching {interval} price data for {symbol}")
     
-    # This would normally fetch from Polygon API
-    # For now return mock data
-    time_periods = ['1D', '1W', '1M', '3M', '1Y', '5Y']
-    
-    if interval not in time_periods:
-        raise HTTPException(status_code=400, detail=f"Invalid interval. Must be one of {time_periods}")
+    try:
+        now = datetime.utcnow()
+        
+        if interval == "1D":
+            start = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+            multiplier, timespan = 5, "minute"
+        elif interval == "1W":
+            start = (now - timedelta(weeks=1)).strftime("%Y-%m-%d")
+            multiplier, timespan = 30, "minute"
+        elif interval == "1M":
+            start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+        elif interval == "3M":
+            start = (now - timedelta(days=90)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+        elif interval == "1Y":
+            start = (now - timedelta(days=365)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "day"
+        elif interval == "5Y":
+            start = (now - timedelta(days=5*365)).strftime("%Y-%m-%d")
+            multiplier, timespan = 1, "week"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid interval")
 
-    # Mock response with a small number of data points
-    data = []
-    base_price = 198.14  # Apple's current price
-    
-    if interval == "1D":
-        # Generate hourly data for a day
-        for i in range(8):
-            hour = 9 + i
-            time_str = f"{hour}:30"
-            change = (i - 4) * 0.25  # Some variation around base price
-            data.append({
+        url = f"https://api.polygon.io/v2/aggs/ticker/{symbol.upper()}/range/{multiplier}/{timespan}/{start}/{now.strftime('%Y-%m-%d')}?adjusted=true&sort=asc&limit=5000&apiKey={POLYGON_API_KEY}"
+
+        r = requests.get(url)
+        data = r.json()
+
+        if "results" not in data:
+            raise HTTPException(status_code=500, detail=f"Polygon error: {data.get('error', 'No results')}")
+
+        candles = []
+        for item in data["results"]:
+            timestamp = datetime.utcfromtimestamp(item["t"]/1000)
+            
+            # Format time based on interval
+            if interval == "1D":
+                time_str = timestamp.strftime("%H:%M")
+            elif interval in ["1W", "1M", "3M"]:
+                time_str = timestamp.strftime("%m/%d")
+            else:  # 1Y, 5Y
+                time_str = timestamp.strftime("%m/%y")
+            
+            candles.append({
                 "time": time_str,
-                "open": round(base_price + change - 0.1, 2),
-                "high": round(base_price + change + 0.2, 2),
-                "low": round(base_price + change - 0.3, 2),
-                "close": round(base_price + change, 2),
-                "volume": int(1000000 + i * 200000)
+                "open": round(item["o"], 2),
+                "high": round(item["h"], 2),
+                "low": round(item["l"], 2),
+                "close": round(item["c"], 2),
+                "volume": item["v"]
             })
-    else:
-        # Generate mock data for other intervals
-        points = {"1W": 5, "1M": 22, "3M": 66, "1Y": 52, "5Y": 60}
-        for i in range(points[interval]):
-            # Create realistic-looking price movements
-            change = (i - points[interval]/2) * 0.5
-            if interval in ["1Y", "5Y"]:
-                change = change * 2  # Bigger changes for longer timeframes
-                
-            data.append({
-                "time": f"2023-{((i % 12) + 1):02d}-{((i % 28) + 1):02d}",
-                "open": round(base_price + change - 0.5, 2),
-                "high": round(base_price + change + 1.0, 2),
-                "low": round(base_price + change - 1.2, 2),
-                "close": round(base_price + change, 2),
-                "volume": int(10000000 + i * 1000000)
-            })
-    
-    return {
-        "symbol": symbol.upper(),
-        "interval": interval,
-        "data": data
-    }
+
+        logger.info(f"Returning {len(candles)} candles for {symbol}")
+        
+        return {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "data": candles
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching price data: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # Routes for handling sentiment analysis
 @app.get("/stocks/{symbol}/sentiment", response_model=SentimentResponse, tags=["Sentiment"])

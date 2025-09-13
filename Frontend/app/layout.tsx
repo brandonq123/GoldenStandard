@@ -24,9 +24,9 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head />
-      <body className={`min-h-screen bg-background font-sans antialiased ${inter.className}`}>
+      <body className={`min-h-screen bg-background font-sans antialiased ${inter.className}`} suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <div className="relative flex min-h-screen flex-col">
             <div className="flex-1">{children}</div>
